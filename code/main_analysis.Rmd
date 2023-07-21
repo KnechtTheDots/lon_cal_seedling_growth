@@ -1,0 +1,88 @@
+---
+title: "Seedling Growth Analysis"
+author: "Josh Knecht"
+output: html_document
+bibliography: references.json
+---
+
+
+### Setup
+
+Install required packages and load data. The package "here" is used because the Rmarkdown document has a working directory than the project. The here function finds sets to the root directory of the project.
+
+Columns are:
+
+- **tray_id**: this is the identification prior to transplant, the first number indicates which tray in which the individual was grown, the second number is the position within the tray
+
+- **id**: this is the identification after transplanting, the first number indicates which six pack in which the plant was grown, the second number is the position within the six pack
+
+- **germ_day**: this is the day, starting from 0, that the seedling germinated after being removed from the cooler
+
+- **cross** this is cross with parental identification in the form dam x sire
+
+- **class**: this is the hybrid class, i.e. LON(*M. aurantiacus* var. *longiflorus*), CAL(*M. aurantiacus* var. *calycinus*), F1, or F2
+
+- **day_4**: this it the leaf area, in mm^2^, of the seedling on the fourth day after removal from the cooler
+
+- **day_17**: this is the leaf area, in mm^2^, of the seedling on the 17th day after removal from the cooler
+
+- **height_122**: this is the height, in cm, of the juvenile 122 days after removal from the cooler
+
+```{r warning=FALSE}
+library(tidyverse)
+library(here)
+df <- read.csv(here("data", "main.csv"))
+head(df)
+```
+
+### Test for Epistasis
+
+Since Dobzhanzky-Muller incompatibilities manifest as negative epistasis between parental genomes, I will first test for epistasis in in seedling traits in offspring from longiflorus/calycinus crosses. With phenotypes from parents, F1s, and F2s, we can use line cross analysis [outlined in @lynchGeneticsAnalysisQuantitative1998]in order to test epistasis. Because the F2 is expected to be in HWE, if all genetic effects are within loci, i.e. additive and dominance, the expected F2 phenotypic mean is just the means of the parents and F1 weighted by the frequency of their genotypes in the F2. 1/4 each for the parents and 1/2 for the F1. So the expected F2 under an additive dominance model can be estimated as: $$E(\overline{F_{2}}) = \frac{\overline{P_{1}} + 2\overline{F_{1}} + \overline{P_{2}}}{4}.$$ A difference between the observed F2 mean and this expectation indicates that the additive dominance model is a poor fit for this data and that epistasis is contributing to this phenotype. The test statistic is: $$\Delta = \overline{F_{2}} - \frac{\overline{P_{1}} + 2\overline{F_{1}} + \overline{P_{2}}}{4} $$ and a significant diference from 0 provides support for epistasis.
+
+To test this I will generate 10,000 nonparametric bootstrap estimates of \(\Delta \).
+
+```{r}
+
+boots_4 <- read.csv(here("data", "boots_4.csv"))
+
+calcs <- boots_4 %>% 
+  mutate(e_f2 = .25*LON + .5*F1 + .25*CAL,
+         delta = F2 - e_f2)
+
+calcs %>% 
+  select(LON,CAL,F1,F2,e_f2) %>% 
+  pivot_longer(1:5, names_to = "class", values_to = "mu_est") %>% 
+  group_by(class) %>% 
+  summarise(mu = mean(mu_est),
+            upr = quantile(mu_est, .975),
+            lwr = quantile(mu_est, .025)) %>% 
+  mutate(HI = case_when(class == "LON" ~ 1,
+                        class == "CAL" ~ 0,
+                        class == "e_f2" ~ .51,
+                        class == "F2" ~ .5,
+                        class == "F1" ~ .49),
+         group = case_when(class == "LON" ~ "a",
+                        class == "CAL" ~ "a",
+                        class == "e_f2" ~ "b",
+                        class == "F2" ~ "c",
+                        class == "F1" ~ "d")) %>% 
+  ggplot(aes(x = HI, y = mu, color = class, group = group)) +
+  geom_point(size = 1.5) +
+  geom_line(color = "black") +
+  geom_errorbar(aes(x = HI, ymin = lwr, ymax = upr),
+                width = 0,
+                linewidth = .75) +
+  scale_color_manual(values = c("black", "blue", "black", "red", "black")) +
+  theme_classic() +
+  labs(x = "Hybrid Index",
+       y = "Estimated Mean") +
+  theme(legend.position = "none")
+  
+
+
+```
+
+
+
+
+
